@@ -1,0 +1,14 @@
+<resources>
+    <style name="Theme.LocalLLMChat" parent="Theme.AppCompat.Light.NoActionBar">
+        <!-- Màu chủ đạo -->
+        <item name="colorPrimary">@color/accent_purple</item>
+        <item name="colorPrimaryDark">@color/gradient_start</item>
+        <item name="colorAccent">@color/accent_blue</item>
+
+        <!-- Thanh trạng thái và navigation -->
+        <item name="android:statusBarColor">@color/background_primary</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:navigationBarColor">@color/white</item>
+        <item name="android:windowLightNavigationBar">true</item>
+    </style>
+</resources>

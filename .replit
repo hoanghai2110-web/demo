@@ -1,0 +1,129 @@
+modules = ["python-3.12", "java-graalvm22.3"]
+[nix]
+channel = "stable-24_05"
+
+[deployment]
+build = ["./gradlew", "assembleDebug"]
+run = ["echo", "APK built successfully! Check app/build/outputs/apk/debug/"]
+deploymentTarget = "cloudrun"
+
+[packager]
+language = "java"
+
+[packager.features]
+packageSearch = true
+
+[languages.java]
+pattern = "**/*.java"
+
+[languages.java.languageServer]
+start = "jdt-language-server"
+
+[unitTest]
+language = "java"
+
+[debugger]
+support = true
+
+[debugger.compile]
+command = "javac -classpath .:/run_dir/junit-4.12.jar:target/dependency/* -g -d . $(find . -type f -name '*.java')"
+
+[debugger.interactive]
+transport = "localhost:0"
+connectTimeout = 60
+startCommand = "java-debug"
+
+[debugger.interactive.initializeMessage]
+command = "initialize"
+type = "request"
+
+[debugger.interactive.initializeMessage.arguments]
+adapterID = "cppdbg"
+clientID = "replit"
+clientName = "replit.com"
+columnsStartAt1 = true
+linesStartAt1 = true
+locale = "en-us"
+pathFormat = "path"
+supportsInvalidatedEvent = true
+supportsProgressReporting = true
+supportsRunInTerminalRequest = true
+supportsVariablePaging = true
+supportsVariableType = true
+
+[debugger.interactive.launchMessage]
+command = "launch"
+type = "request"
+
+[debugger.interactive.launchMessage.arguments]
+classPaths = ["."]
+mainClass = "Main"
+
+[workflows]
+runButton = "Build APK Fixed"
+
+[[workflows.workflow]]
+name = "Build Android APK"
+author = 44748979
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "export ANDROID_HOME=$PWD/android-sdk"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "export ANDROID_SDK_ROOT=$PWD/android-sdk"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "export PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "chmod +x gradlew"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "./gradlew clean assembleDebug"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "echo \"✅ APK được tạo tại: app/build/outputs/apk/debug/\""
+
+[[workflows.workflow]]
+name = "Build APK Fixed"
+author = 44748979
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "export ANDROID_HOME=$PWD/android-sdk"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "export ANDROID_SDK_ROOT=$PWD/android-sdk"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "export PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "chmod +x gradlew"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "./gradlew clean"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "./gradlew assembleDebug"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "echo \"🎉 APK build completed! Check app/build/outputs/apk/debug/\""
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "ls -la app/build/outputs/apk/debug/"
