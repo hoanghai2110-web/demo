@@ -9,7 +9,7 @@ const genAI = new GoogleGenAI({
 
 export async function POST(request: NextRequest) {
   try {
-    const { message } = await request.json()
+    const { message, conversationId } = await request.json()
 
     if (!message) {
       return NextResponse.json(
@@ -57,6 +57,7 @@ export async function POST(request: NextRequest) {
       .from('messages')
       .insert({
         user_id: user.id,
+        conversation_id: conversationId,
         content: message,
         role: 'user'
       })
@@ -94,6 +95,7 @@ export async function POST(request: NextRequest) {
       .from('messages')
       .insert({
         user_id: user.id,
+        conversation_id: conversationId,
         content: aiResponse,
         role: 'assistant'
       })

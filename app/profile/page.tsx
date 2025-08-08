@@ -12,6 +12,7 @@ export default function ProfilePage() {
   const [user, setUser] = useState<any>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [notificationsEnabled, setNotificationsEnabled] = useState(true)
+  const [conversations, setConversations] = useState<any[]>([])
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -22,10 +23,23 @@ export default function ProfilePage() {
       }
       setUser(session.user)
       setIsLoading(false)
+      loadConversations(session.user.id)
     }
 
     checkAuth()
   }, [router])
+
+  const loadConversations = async (userId: string) => {
+    const { data, error } = await supabase
+      .from('conversations')
+      .select('*')
+      .eq('user_id', userId)
+      .order('updated_at', { ascending: false })
+
+    if (!error) {
+      setConversations(data || [])
+    }
+  }
 
   const handleLogout = async () => {
     const { error } = await supabase.auth.signOut()
@@ -52,12 +66,22 @@ export default function ProfilePage() {
     return null
   }
 
+  const handleEditProfile = async () => {
+    const newName = prompt('Enter new display name', user.user_metadata?.full_name || '')
+    if (newName && newName !== user.user_metadata?.full_name) {
+      const { error } = await supabase.auth.updateUser({ data: { full_name: newName } })
+      if (!error) {
+        setUser({ ...user, user_metadata: { ...user.user_metadata, full_name: newName } })
+      }
+    }
+  }
+
   const menuItems = [
     {
       icon: User,
       label: "Edit Profile",
       hasArrow: true,
-      onClick: () => {}
+      onClick: handleEditProfile
     },
     {
       icon: Bell,
@@ -179,6 +203,23 @@ export default function ProfilePage() {
           </div>
         ))}
       </div>
+      {conversations.length > 0 && (
+        <div className="px-6 py-6">
+          <h2 className="text-[15px] font-medium text-[#101010] mb-4">Chat History</h2>
+          <div className="space-y-2">
+            {conversations.map((conv) => (
+              <div
+                key={conv.id}
+                className="flex items-center justify-between py-2 border-b border-[#e9e4d6] cursor-pointer"
+                onClick={() => router.push(`/chat?conversation=${conv.id}`)}
+              >
+                <span className="text-[15px] text-[#403e39] truncate pr-2">{conv.title || 'Untitled'}</span>
+                <ChevronRight className="h-4 w-4 text-[#403e39]" strokeWidth={1.5} />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

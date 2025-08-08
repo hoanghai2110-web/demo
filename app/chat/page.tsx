@@ -4,7 +4,7 @@
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useState, useRef, useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { Menu, User, ThumbsUp, ThumbsDown, Copy, Send, Edit, LogOut } from 'lucide-react'
 import { supabase } from "@/lib/supabase"
 
@@ -14,6 +14,15 @@ interface Message {
   content: string
   role: 'user' | 'assistant'
   created_at: string
+  feedback?: 'up' | 'down' | null
+}
+
+interface Conversation {
+  id: string
+  user_id: string
+  title: string | null
+  created_at: string
+  updated_at: string
 }
 
 export default function ChatPage() {
@@ -21,7 +30,11 @@ export default function ChatPage() {
   const [inputValue, setInputValue] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [user, setUser] = useState<any>(null)
+  const [conversations, setConversations] = useState<Conversation[]>([])
+  const [currentConversationId, setCurrentConversationId] = useState<string | null>(null)
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false)
   const router = useRouter()
+  const searchParams = useSearchParams()
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const scrollToBottom = () => {
@@ -41,7 +54,7 @@ export default function ChatPage() {
         return
       }
       setUser(session.user)
-      loadMessages(session.user.id)
+      loadConversations(session.user.id)
     }
 
     checkAuth()
@@ -56,12 +69,37 @@ export default function ChatPage() {
     return () => subscription.unsubscribe()
   }, [router])
 
-  const loadMessages = async (userId: string) => {
+  const loadConversations = async (userId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('conversations')
+        .select('*')
+        .eq('user_id', userId)
+        .order('updated_at', { ascending: false })
+
+      if (error) {
+        console.error('Error loading conversations:', error)
+        return
+      }
+
+      setConversations(data || [])
+
+      const initial = searchParams.get('conversation') || data?.[0]?.id
+      if (initial) {
+        setCurrentConversationId(initial)
+        await loadMessages(initial)
+      }
+    } catch (error) {
+      console.error('Error loading conversations:', error)
+    }
+  }
+
+  const loadMessages = async (conversationId: string) => {
     try {
       const { data, error } = await supabase
         .from('messages')
         .select('*')
-        .eq('user_id', userId)
+        .eq('conversation_id', conversationId)
         .order('created_at', { ascending: true })
 
       if (error) {
@@ -82,7 +120,29 @@ export default function ChatPage() {
     setInputValue('')
     setIsLoading(true)
 
-    // Thêm tin nhắn user vào UI ngay lập tức
+    let conversationId = currentConversationId
+
+    if (!conversationId) {
+      const { data: convData, error: convError } = await supabase
+        .from('conversations')
+        .insert({
+          user_id: user.id,
+          title: userMessage.slice(0, 30)
+        })
+        .select()
+        .single()
+
+      if (convError) {
+        console.error('Error creating conversation:', convError)
+        setIsLoading(false)
+        return
+      }
+
+      conversationId = convData.id
+      setCurrentConversationId(conversationId)
+      setConversations(prev => [convData, ...prev])
+    }
+
     const tempUserMessage: Message = {
       id: Date.now().toString(),
       user_id: user.id,
@@ -93,9 +153,8 @@ export default function ChatPage() {
     setMessages(prev => [...prev, tempUserMessage])
 
     try {
-      // Lấy session token
       const { data: { session } } = await supabase.auth.getSession()
-      
+
       if (!session?.access_token) {
         throw new Error('No access token found')
       }
@@ -107,7 +166,8 @@ export default function ChatPage() {
           'Authorization': `Bearer ${session.access_token}`
         },
         body: JSON.stringify({
-          message: userMessage
+          message: userMessage,
+          conversationId
         }),
       })
 
@@ -117,8 +177,12 @@ export default function ChatPage() {
 
       const data = await response.json()
 
-      // Reload messages để hiển thị cả tin nhắn user và AI
-      await loadMessages(user.id)
+      await loadMessages(conversationId)
+      await supabase
+        .from('conversations')
+        .update({ updated_at: new Date().toISOString() })
+        .eq('id', conversationId)
+      await loadConversations(user.id)
 
     } catch (error) {
       console.error('Error sending message:', error)
@@ -135,8 +199,54 @@ export default function ChatPage() {
     }
   }
 
+  const handleNewChat = () => {
+    setCurrentConversationId(null)
+    setMessages([])
+    setIsSidebarOpen(false)
+  }
+
   const handleCopyMessage = (content: string) => {
     navigator.clipboard.writeText(content)
+  }
+
+  const handleEditMessage = async (id: string, current: string) => {
+    const newContent = prompt('Chỉnh sửa tin nhắn', current)
+    if (!newContent || newContent === current) return
+
+    const { error } = await supabase
+      .from('messages')
+      .update({ content: newContent })
+      .eq('id', id)
+
+    if (error) {
+      console.error('Error editing message:', error)
+      return
+    }
+
+    setMessages(prev =>
+      prev.map(msg => (msg.id === id ? { ...msg, content: newContent } : msg))
+    )
+  }
+
+  const handleFeedback = async (id: string, value: 'up' | 'down') => {
+    const current = messages.find(m => m.id === id)?.feedback
+    const newValue = current === value ? null : value
+
+    const { error } = await supabase
+      .from('messages')
+      .update({ feedback: newValue })
+      .eq('id', id)
+
+    if (error) {
+      console.error('Error saving feedback:', error)
+      return
+    }
+
+    setMessages(prev =>
+      prev.map(msg =>
+        msg.id === id ? { ...msg, feedback: newValue } : msg
+      )
+    )
   }
 
   const handleLogout = async () => {
@@ -162,9 +272,33 @@ export default function ChatPage() {
 
   return (
     <div className="h-screen bg-[#f2efe4] flex flex-col font-['Rubik'] max-w-[375px] mx-auto relative overflow-hidden">
+      {isSidebarOpen && (
+        <div className="fixed inset-0 z-30">
+          <div className="absolute inset-0 bg-black/30" onClick={() => setIsSidebarOpen(false)}></div>
+          <div className="absolute inset-y-0 left-0 w-60 bg-[#f2efe4] p-4 overflow-y-auto">
+            <Button className="w-full mb-4" onClick={handleNewChat}>New Chat</Button>
+            <div className="space-y-2">
+              {conversations.map(conv => (
+                <div
+                  key={conv.id}
+                  className={`p-2 rounded cursor-pointer ${conv.id === currentConversationId ? 'bg-white' : 'bg-[#fffbf2]'}`}
+                  onClick={() => {
+                    setCurrentConversationId(conv.id)
+                    loadMessages(conv.id)
+                    setIsSidebarOpen(false)
+                  }}
+                >
+                  <p className="text-sm text-[#403e39] truncate">{conv.title || 'Untitled'}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Fixed Header - chính xác theo Figma */}
       <header className="fixed top-0 left-1/2 transform -translate-x-1/2 w-full max-w-[375px] z-20 px-5 py-3 flex items-center justify-between bg-[#f2efe4] h-[48px]">
-        <Button variant="ghost" size="icon" className="h-8 w-8 p-0">
+        <Button variant="ghost" size="icon" className="h-8 w-8 p-0" onClick={() => setIsSidebarOpen(true)}>
           <Menu className="h-6 w-6 text-[#101010]" strokeWidth={2} />
         </Button>
 
@@ -204,7 +338,12 @@ export default function ChatPage() {
             {message.role === 'user' ? (
               // User message bubble - chính xác theo Figma
               <div className="flex items-start justify-end space-x-2 mb-3">
-                <Button variant="ghost" size="icon" className="h-5 w-5 mt-2 p-0 flex-shrink-0">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-5 w-5 mt-2 p-0 flex-shrink-0"
+                  onClick={() => handleEditMessage(message.id, message.content)}
+                >
                   <Edit className="h-3 w-3 text-[#101010]" />
                 </Button>
                 <div className="bg-[#fffbf2] rounded-xl px-3 py-2 max-w-[260px] rounded-br-sm">
@@ -243,11 +382,27 @@ export default function ChatPage() {
                 {/* Action buttons - đúng layout theo Figma */}
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-2">
-                    <Button variant="ghost" size="icon" className="h-5 w-5 p-0">
-                      <ThumbsUp className="h-4 w-4 text-[#101010]" strokeWidth={1.5} />
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-5 w-5 p-0"
+                      onClick={() => handleFeedback(message.id, 'up')}
+                    >
+                      <ThumbsUp
+                        className={`h-4 w-4 ${message.feedback === 'up' ? 'text-[#262522]' : 'text-[#101010]'}`}
+                        strokeWidth={1.5}
+                      />
                     </Button>
-                    <Button variant="ghost" size="icon" className="h-5 w-5 p-0">
-                      <ThumbsDown className="h-4 w-4 text-[#101010]" strokeWidth={1.5} />
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-5 w-5 p-0"
+                      onClick={() => handleFeedback(message.id, 'down')}
+                    >
+                      <ThumbsDown
+                        className={`h-4 w-4 ${message.feedback === 'down' ? 'text-[#262522]' : 'text-[#101010]'}`}
+                        strokeWidth={1.5}
+                      />
                     </Button>
                   </div>
 
